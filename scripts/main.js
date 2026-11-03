@@ -1,4 +1,5 @@
-import { isDate } from './storage.js';
+import { views } from './data.js';
+import { isDate, readPlan, writePlan } from './storage.js';
 
 function make(tag, text = '') {
   const node = document.createElement(tag);
@@ -135,12 +136,20 @@ function actionButton(caption, action, id) {
 }
 
 function update() {
+  const writeWarning = writePlan(items, sequence);
+  if (writeWarning) {
+    diskNotice.textContent = loadWarning ? loadWarning + ' ' + writeWarning : writeWarning;
+  } else {
+    loadWarning = '';
+    diskNotice.textContent = '';
+  }
   paint();
 }
 
 function paint() {
   const focusedId = document.activeElement.id;
   let visible = sequence.slice();
+  visible = filterIds();
   cards.replaceChildren();
   for (const id of visible) {
     const item = items[id];
@@ -190,6 +199,84 @@ cards.addEventListener('click', event => {
   }
 });
 
+let selectedView = 'any';
+const tabs = make('div');
+tabs.className = 'tabs';
+tabs.setAttribute('role', 'group');
+tabs.setAttribute('aria-label', 'Состояние задач');
+for (const view of views) {
+  const button = make('button', view.caption);
+  button.type = 'button';
+  button.dataset.view = view.value;
+  button.setAttribute('aria-pressed', String(view.value === selectedView));
+  tabs.append(button);
+}
+tabs.addEventListener('click', event => {
+  const button = event.target.closest('[data-view]');
+  if (!button) return;
+  selectedView = button.dataset.view;
+  refreshTabs();
+  paint();
+});
+function refreshTabs() {
+  for (const button of tabs.children) button.setAttribute('aria-pressed', String(button.dataset.view === selectedView));
+}
+const tools = make('div');
+tools.className = 'tools';
+function toolField(caption, id, type) {
+  const group = make('div');
+  const label = make('label', caption);
+  label.htmlFor = id;
+  const input = make('input');
+  input.id = id;
+  input.type = type;
+  group.append(label, input);
+  tools.append(group);
+  return input;
+}
+const query = toolField('Поиск по названию', 'query', 'search');
+const start = toolField('С даты', 'start-date', 'date');
+const finish = toolField('По дату', 'finish-date', 'date');
+const rangeMessage = make('p');
+rangeMessage.className = 'range-message';
+rangeMessage.setAttribute('role', 'status');
+const clear = make('button', 'Очистить фильтры');
+clear.type = 'button';
+clear.className = 'secondary';
+tools.append(clear);
+clear.addEventListener('click', () => {
+  query.value = '';
+  start.value = '';
+  finish.value = '';
+  selectedView = 'any';
+  refreshTabs();
+  paint();
+});
+tools.addEventListener('input', paint);
+tools.addEventListener('change', paint);
+main.insertBefore(tabs, board);
+main.insertBefore(tools, board);
+main.insertBefore(rangeMessage, board);
+
+function filterIds() {
+  const invalidRange = start.value && finish.value && start.value > finish.value;
+  rangeMessage.textContent = invalidRange ? 'Начало периода позже конца. Исправьте даты.' : '';
+  if (invalidRange) return [];
+  const needle = query.value.trim().toLocaleLowerCase('ru');
+  return sequence.filter(id => {
+    const item = items[id];
+    if (selectedView === 'finished' && !item.finished) return false;
+    if (selectedView === 'waiting' && item.finished) return false;
+    if (start.value && item.deadline < start.value) return false;
+    if (finish.value && item.deadline > finish.value) return false;
+    return item.label.toLocaleLowerCase('ru').includes(needle);
+  });
+}
+const saved = readPlan();
+items = saved.items;
+sequence = saved.order;
+let loadWarning = saved.warning;
+diskNotice.textContent = loadWarning;
 
 
 
