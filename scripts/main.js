@@ -1,4 +1,4 @@
-import { views } from './data.js';
+import { views, dateOrders } from './data.js';
 import { isDate, readPlan, writePlan } from './storage.js';
 
 function make(tag, text = '') {
@@ -150,6 +150,8 @@ function paint() {
   const focusedId = document.activeElement.id;
   let visible = sequence.slice();
   visible = filterIds();
+  if (sorting.value === 'forward') visible.sort((a, b) => items[a].deadline.localeCompare(items[b].deadline));
+  if (sorting.value === 'backward') visible.sort((a, b) => items[b].deadline.localeCompare(items[a].deadline));
   cards.replaceChildren();
   for (const id of visible) {
     const item = items[id];
@@ -169,6 +171,8 @@ function paint() {
     actions.append(toggle, actionButton('Править', 'edit', id), actionButton('Убрать', 'delete', id));
     article.append(date, label, badge, actions);
     li.append(article);
+    li.draggable = canArrange();
+    li.title = canArrange() ? 'Перетащите карточку на другую, чтобы поменять порядок' : '';
     cards.append(li);
   }
   const completed = sequence.filter(id => items[id].finished).length;
@@ -250,6 +254,7 @@ clear.addEventListener('click', () => {
   finish.value = '';
   selectedView = 'any';
   refreshTabs();
+  sorting.value = 'own';
   paint();
 });
 tools.addEventListener('input', paint);
@@ -278,6 +283,67 @@ sequence = saved.order;
 let loadWarning = saved.warning;
 diskNotice.textContent = loadWarning;
 
+const sortGroup = make('div');
+const sortLabel = make('label', 'Расположение');
+sortLabel.htmlFor = 'arrangement';
+const sorting = make('select');
+sorting.id = 'arrangement';
+for (const entry of dateOrders) {
+  const option = make('option', entry.caption);
+  option.value = entry.value;
+  sorting.append(option);
+}
+sortGroup.append(sortLabel, sorting);
+tools.insertBefore(sortGroup, clear);
+const hint = make('p', 'Порядок меняется перетаскиванием карточек, когда выбран «Как расставил я» и очищены фильтры.');
+hint.className = 'arrange-hint';
+board.insertBefore(hint, cards);
+let dragging = null;
+
+function canArrange() {
+  return sorting.value === 'own'
+    && selectedView === 'any'
+    && !query.value.trim()
+    && !start.value
+    && !finish.value;
+}
+
+function arrange(id, anchor, after) {
+  if (!canArrange() || id === anchor || !sequence.includes(id) || !sequence.includes(anchor)) return;
+  sequence.splice(sequence.indexOf(id), 1);
+  sequence.splice(sequence.indexOf(anchor) + (after ? 1 : 0), 0, id);
+  update();
+  notice.textContent = 'Карточки расставлены в новом порядке.';
+  document.getElementById('edit-' + id).focus();
+}
+
+cards.addEventListener('dragstart', event => {
+  const card = event.target.closest('[data-key]');
+  if (!card || !canArrange()) { event.preventDefault(); return; }
+  dragging = card.dataset.key;
+  event.dataTransfer.setData('text/plain', dragging);
+  event.dataTransfer.effectAllowed = 'move';
+  card.classList.add('dragging');
+});
+cards.addEventListener('dragover', event => {
+  const card = event.target.closest('[data-key]');
+  if (!card || !dragging || !canArrange()) return;
+  event.preventDefault();
+  for (const child of cards.children) child.classList.toggle('drop-target', child === card);
+});
+cards.addEventListener('drop', event => {
+  event.preventDefault();
+  const target = event.target.closest('[data-key]');
+  if (!target || !dragging || event.dataTransfer.getData('text/plain') !== dragging) return;
+  const rect = target.getBoundingClientRect();
+  arrange(dragging, target.dataset.key, event.clientX > rect.left + rect.width / 2);
+  dragging = null;
+  clearDragStyles();
+});
+function clearDragStyles() {
+  for (const card of cards.children) card.classList.remove('dragging', 'drop-target');
+}
+cards.addEventListener('dragend', () => { dragging = null; clearDragStyles(); });
 
 
 paint();
