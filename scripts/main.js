@@ -173,6 +173,15 @@ function paint() {
     li.append(article);
     li.draggable = canArrange();
     li.title = canArrange() ? 'Перетащите карточку на другую, чтобы поменять порядок' : '';
+    const movement = make('div');
+    movement.className = 'movement';
+    const position = sequence.indexOf(id);
+    const earlier = actionButton('← Раньше', 'earlier', id);
+    const later = actionButton('Позже →', 'later', id);
+    earlier.disabled = !canArrange() || position === 0;
+    later.disabled = !canArrange() || position === sequence.length - 1;
+    movement.append(earlier, later);
+    article.append(movement);
     cards.append(li);
   }
   const completed = sequence.filter(id => items[id].finished).length;
@@ -195,12 +204,17 @@ cards.addEventListener('click', event => {
     notice.textContent = items[id].finished ? 'Отмечено как выполненное.' : 'Задача снова в работе.';
   }
   if (button.dataset.action === 'delete') {
+    lastRemoved = { id, item: items[id], position: sequence.indexOf(id) };
+    undo.hidden = false;
     delete items[id];
     sequence = sequence.filter(key => key !== id);
     update();
     notice.textContent = 'Задача удалена.';
     boardTitle.focus();
   }
+  const index = sequence.indexOf(id);
+  if (button.dataset.action === 'earlier') arrange(id, sequence[index - 1], false);
+  if (button.dataset.action === 'later') arrange(id, sequence[index + 1], true);
 });
 
 let selectedView = 'any';
@@ -345,5 +359,22 @@ function clearDragStyles() {
 }
 cards.addEventListener('dragend', () => { dragging = null; clearDragStyles(); });
 
+let lastRemoved = null;
+const undo = make('button', 'Вернуть последнюю удалённую задачу');
+undo.type = 'button';
+undo.className = 'secondary';
+undo.hidden = true;
+main.insertBefore(undo, board);
+undo.addEventListener('click', () => {
+  if (!lastRemoved) return;
+  const { id, item, position } = lastRemoved;
+  items[id] = item;
+  sequence.splice(Math.min(position, sequence.length), 0, id);
+  lastRemoved = null;
+  undo.hidden = true;
+  update();
+  notice.textContent = 'Удалённая задача возвращена. Если её не видно, очистите фильтры.';
+  boardTitle.focus();
+});
 
 paint();
