@@ -1,3 +1,4 @@
+import { isDate } from './storage.js';
 
 function make(tag, text = '') {
   const node = document.createElement(tag);
@@ -52,7 +53,144 @@ board.append(boardTitle, cards, nothing);
 main.append(top, notice, diskNotice, board);
 document.body.append(masthead, main, make('footer', 'Одна задача — один понятный шаг.'));
 
+let items = {};
+let sequence = [];
+let currentId = null;
+addButton.disabled = false;
+const dialog = make('dialog');
+const editor = make('form');
+const editorTitle = make('h2', 'Новая задача');
+editorTitle.id = 'editor-title';
+dialog.setAttribute('aria-labelledby', editorTitle.id);
+function editorField(text, id, type) {
+  const wrapper = make('div');
+  wrapper.className = 'editor-field';
+  const label = make('label', text);
+  label.htmlFor = id;
+  const control = make('input');
+  control.type = type;
+  control.id = id;
+  control.name = id;
+  control.required = true;
+  wrapper.append(label, control);
+  editor.append(wrapper);
+  return control;
+}
+editor.append(editorTitle);
+const taskName = editorField('Задача', 'name-input', 'text');
+taskName.maxLength = 90;
+const deadline = editorField('Дата', 'deadline-input', 'date');
+const saveButton = make('button', 'Записать');
+saveButton.type = 'submit';
+const closeButton = make('button', 'Закрыть без сохранения');
+closeButton.type = 'button';
+closeButton.className = 'secondary';
+editor.append(saveButton, closeButton);
+dialog.append(editor);
+document.body.append(dialog);
+
+function openEditor(id = null) {
+  currentId = id;
+  editor.reset();
+  taskName.setCustomValidity('');
+  deadline.setCustomValidity('');
+  editorTitle.textContent = id ? 'Изменить задачу' : 'Новая задача';
+  if (id) {
+    taskName.value = items[id].label;
+    deadline.value = items[id].deadline;
+  }
+  dialog.showModal();
+  taskName.focus();
+}
+addButton.addEventListener('click', () => openEditor());
+closeButton.addEventListener('click', () => dialog.close());
+editor.addEventListener('input', event => event.target.setCustomValidity(''));
+editor.addEventListener('submit', event => {
+  event.preventDefault();
+  taskName.value = taskName.value.trim();
+  taskName.setCustomValidity(taskName.value ? '' : 'Напишите, что нужно сделать.');
+  deadline.setCustomValidity(isDate(deadline.value) ? '' : 'Проверьте дату.');
+  if (!editor.reportValidity()) return;
+  if (currentId) {
+    items[currentId].label = taskName.value;
+    items[currentId].deadline = deadline.value;
+  } else {
+    const id = 'job-' + crypto.randomUUID();
+    items[id] = { label: taskName.value, deadline: deadline.value, finished: false };
+    sequence.push(id);
+  }
+  dialog.close();
+  update();
+  notice.textContent = currentId ? 'Задача изменена.' : 'Новая задача записана.';
+  const editedButton = currentId ? document.getElementById('edit-' + currentId) : null;
+  (editedButton || addButton).focus();
+});
+
+function actionButton(caption, action, id) {
+  const button = make('button', caption);
+  button.type = 'button';
+  button.dataset.action = action;
+  button.id = action + '-' + id;
+  return button;
+}
+
+function update() {
+  paint();
+}
+
+function paint() {
+  const focusedId = document.activeElement.id;
+  let visible = sequence.slice();
+  cards.replaceChildren();
+  for (const id of visible) {
+    const item = items[id];
+    const li = make('li');
+    li.dataset.key = id;
+    li.className = item.finished ? 'card finished' : 'card';
+    const article = make('article');
+    const label = make('h3', item.label);
+    const date = make('time', item.deadline.split('-').reverse().join('.'));
+    date.dateTime = item.deadline;
+    const badge = make('p', item.finished ? 'Готово' : 'В работе');
+    badge.className = 'badge';
+    const actions = make('div');
+    actions.className = 'card-actions';
+    const toggle = actionButton(item.finished ? 'Вернуть в работу' : 'Готово', 'toggle', id);
+    toggle.setAttribute('aria-pressed', String(item.finished));
+    actions.append(toggle, actionButton('Править', 'edit', id), actionButton('Убрать', 'delete', id));
+    article.append(date, label, badge, actions);
+    li.append(article);
+    cards.append(li);
+  }
+  const completed = sequence.filter(id => items[id].finished).length;
+  progress.textContent = 'Готово ' + completed + ' из ' + sequence.length + '. На экране: ' + visible.length + '.';
+  nothing.hidden = visible.length > 0;
+  nothing.textContent = sequence.length ? 'Ничего не найдено. Попробуйте изменить условия.' : 'Добавьте задачу, например: разобрать партию к пятнице.';
+  const focused = document.getElementById(focusedId);
+  if (focused && !focused.disabled) focused.focus();
+  else if (focusedId.startsWith('toggle-')) boardTitle.focus();
+}
+
+cards.addEventListener('click', event => {
+  const button = event.target.closest('button[data-action]');
+  if (!button) return;
+  const id = button.closest('[data-key]').dataset.key;
+  if (button.dataset.action === 'edit') openEditor(id);
+  if (button.dataset.action === 'toggle') {
+    items[id].finished = !items[id].finished;
+    update();
+    notice.textContent = items[id].finished ? 'Отмечено как выполненное.' : 'Задача снова в работе.';
+  }
+  if (button.dataset.action === 'delete') {
+    delete items[id];
+    sequence = sequence.filter(key => key !== id);
+    update();
+    notice.textContent = 'Задача удалена.';
+    boardTitle.focus();
+  }
+});
 
 
 
 
+paint();
